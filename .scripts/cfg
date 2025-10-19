@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# Script Name: cfg
+# Description: Manage dotfiles through bare repository
+
+# Set the GIT command with options
+GIT=(/usr/bin/env git --git-dir="$HOME/.cfg/" --work-tree="$HOME")
+
+# Function to init new .cfg dir
+function config_init() {
+    source_bashrc_xtra
+    if [[ -d "$HOME/.cfg" ]]; then
+        echo "$HOME/.cfg already exists. Exiting."
+        exit 1
+    else
+        git init --bare "$HOME/.cfg"
+        echo "Initialized a bare Git repository at $HOME/.cfg"
+        "${GIT[@]}" config --local status.showUntrackedFiles no
+    fi
+}
+
+# Function to clone remote cfg repo to .cfg
+function config_clone() {
+    source_bashrc_xtra
+    if [[ -z $1 ]]; then
+        echo "Expected some repository link. Exiting."
+        exit 1
+    fi
+    if [[ -d "$HOME/.cfg" ]]; then
+        echo "$HOME/.cfg already exists. Exiting."
+        exit 1
+    fi
+    git clone --bare $1 $HOME/.cfg
+    "${GIT[@]}" checkout
+    if [ $? = 0 ]; then
+        echo "Checked out config.";
+    else
+        echo "Backing up pre-existing dot files.";
+        mkdir -p .config-backup
+        "${GIT[@]}" checkout 2>&1 | egrep "\s+\." | awk {'print $1'} | xargs -I{} mv {} .config-backup/{}
+    fi
+    "${GIT[@]}" checkout
+    "${GIT[@]}" config status.showUntrackedFiles no
+}
+
+function source_bashrc_xtra() {
+  local line='. "$HOME/.bashrc_xtra"'
+  local file="$HOME/.bashrc"
+
+  # Ensure file exists
+  [ -f "$file" ] || : > "$file"
+
+  # Use grep with fixed-string and anchor to match whole line
+  if ! grep -Fxq "$line" "$file"; then
+    printf '%s\n' "$line" >> "$file"
+  fi
+
+  [ -f "$HOME/.bashrc_xtra" ] || : > "$HOME/.bashrc_xtra"
+  if ! grep -Fxq "PATH=\"\$PATH:\$HOME/.scripts\"" "$HOME/.bashrc_xtra"; then
+    printf '%s\n' "PATH=\"\$PATH:\$HOME/.scripts\"" >> "$HOME/.bashrc_xtra"
+  fi
+
+  . "$HOME/.bashrc"
+}
+
+function config_ls() {
+    local path="${1:-.}"
+    local depth="${2:-}"
+    local find_depth_args=()
+
+    # validate depth if provided (positive integer)
+    if [[ -n "$depth" ]]; then
+        if [[ ! "$depth" =~ ^[0-9]+$ ]] || [[ "$depth" -lt 0 ]]; then
+            printf 'Invalid depth: %s\n' "$depth" >&2
+            return 1
+        fi
+        # -maxdepth counts starting from the starting directory; use 0..N
+        find_depth_args=( -maxdepth "$depth" )
+    fi
+
+    find -L "$path" "${find_depth_args[@]}" -type f -print | sort | while IFS= read -r f; do
+       if "${GIT[@]}" -C . ls-files --error-unmatch --full-name "$f" >/dev/null 2>&1; then
+            if "${GIT[@]}" -C . status --porcelain -- "$f" | grep -q '^[ MARCUDTBI]'; then
+                printf '\e[33m~ %s\e[0m\n' "$f"
+            else
+                printf '\e[32m+ %s\e[0m\n' "$f"
+            fi
+        else
+            printf '\e[31m- %s\e[0m\n' "$f"
+        fi
+    done
+}
+
+# Function to list files
+function config_list() {
+    local dir=""
+    local untracked=false
+    local all=false
+
+    # Parse flags and arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -u)
+                untracked=true
+                shift
+                ;;
+            -a)
+                all=true
+                shift
+                ;;
+            *)
+                dir="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # List all tracked files in the repository
+    if [[ -z "$dir" ]]; then
+        echo "Tracked Files:"
+        "${GIT[@]}" ls-files
+    # List all tracked files in a specified directory
+    elif [[ -n "$dir" && ! $untracked ]]; then
+        echo "Tracked files in '$dir':"
+        "${GIT[@]}" ls-files --directory "$dir"
+    # List untracked files in a specified directory, excluding directories
+    elif [[ $untracked && ! $all ]]; then
+        echo "Untracked file in '$dir':"
+        "${GIT[@]}" ls-files --others --exclude-standard --directory "$dir" | grep -v '/$'
+    # List untracked files and directories in a specified directory
+    elif [[ $untracked && $all ]]; then
+        echo "Untracked files and directories in '$dir':"
+        "${GIT[@]}" ls-files --others --exclude-standard --directory "$dir"
+    fi
+}
+
+# Function to add files to be tracked
+function config_add() {
+    echo "Tracking files: $2"
+    "${GIT[@]}" add $2
+}
+
+# Function to stage changes and print staged changes
+function config_stage() {
+    echo "Staged tracked files: "
+    "${GIT[@]}" add -u
+    "${GIT[@]}" status -s 
+}
+
+# Function to save changes
+function config_save() {
+    echo "Saving staged changes: "
+    # Stage all changes
+    # "${GIT[@]}" add -u
+    # Commit the changes with a message based on the status
+    #"${GIT[@]}" commit -m "${date}" -m "$("${GIT[@]}" status -s)"
+    "${GIT[@]}" commit -m "$(date "+%Y-%m-%d %H:%M:%S")" -m "$("${GIT[@]}" status -s | tr '\n' '; ')"
+    # Push the changes to the remote repository
+    "${GIT[@]}" push
+}
+
+# Function to create a new branch
+function config_switch() {
+    # Create and checkout a new branch
+    "${GIT[@]}" checkout -b "$1"
+}
+
+# Function to run arbitrary git commands
+function config_git() {
+    shift # Remove 'git' from arguments
+    "${GIT[@]}" "$@"
+}
+
+# Function to display help information
+function config_help() {
+    echo "Usage: config {list|save|use|new|help} [options]"
+    echo ""
+    echo "Commands:"
+    echo "  list       List files in the repository."
+    echo "             Options:"
+    echo "               <dir>       List all tracked files in the specified directory."
+    echo "               -u <dir>    List untracked files in the specified directory."
+    echo "               -u -a <dir> List untracked files and directories in the specified directory."
+    echo ""
+    echo "  save       Save changes to the repository."
+    echo "             This command stages all changes, commits them with a message, and pushes to the remote."
+    echo ""
+    echo "  use <branch>  Checkout the specified branch."
+    echo ""
+    echo "  new <branch>  Create and checkout a new branch."
+    echo ""
+    echo "  help       Display this help message."
+}
+
+# Main command dispatcher
+case "$1" in
+    ls)
+        shift
+        config_ls "$@"
+        ;;
+    list)
+        shift  # Remove the 'list' command from the arguments
+        config_list "$@"
+        ;;
+    add)
+        config_add "$2"
+        ;;
+    stage)
+        config_stage
+        ;;
+    save)
+        config_save
+        ;;
+    qs)
+        config_stage
+        config_save
+        ;;
+    switch)
+        config_switch "$2"
+        ;;
+    help)
+        config_help
+        ;;
+    status)
+        "${GIT[@]}" status
+        ;;
+    clone)
+        config_clone "$2"
+        ;;
+    git)
+        config_git "$@"
+        ;;
+    init)
+        config_init
+        ;;
+    edit)
+        vim $0
+        ;;
+    %)
+        "${GIT[@]}" status -s
+        read -r -p "Press Enter to see diff with main..."
+        "${GIT[@]}" diff main
+        ;;
+    *)
+        echo "Usage: config {list|save|use|new|help} [options]"
+        ;;
+esac
+
+
