@@ -43,7 +43,7 @@ function config_clone() {
 }
 
 function source_bashrc_xtra() {
-  local line='. "$HOME/.bashrc_xtra"'
+  local line='. .bashrc_xtra'
   local file="$HOME/.bashrc"
 
   # Ensure file exists

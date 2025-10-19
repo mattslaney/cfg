@@ -1,0 +1,92 @@
+"" ==============
+"" BASIC SETTINGS
+"" --------------
+set relativenumber 
+set ruler
+set visualbell
+set scrolloff=5
+set encoding=utf-8
+set tabstop=4
+set softtabstop=4
+set expandtab
+
+" load filetype specific configs from ~/.vim/ftplugin
+" See current filetype with ':set filetype?'
+filetype on
+filetype plugin on
+filetype indent on
+
+"" ===============
+"" VISUAL SETTINGS
+"" ---------------
+set cursorline
+"set cursorcolumn
+set colorcolumn=80,120 " Visual guide at 80 and 120 columns
+
+if has('reltime')
+    set incsearch " show matches as you type
+endif
+set hlsearch  " Highlight all matches of the last search
+
+" Turn syntax highlighting on if more than 2 colors available
+if &t_Co > 2 || has("gui_running")
+  " Revert with ":syntax off".
+  syntax on
+endif
+
+" Set the theme
+try
+    colorscheme retrobox
+catch
+    highlight Comment ctermfg=LightBlue
+endtry
+
+highlight Normal ctermbg=none " Transparent background
+highlight ColorColumn ctermbg=235 guibg=#1c1c1c " Adjust colors as needed
+
+"" ===============
+"" EDITOR SETTINGS
+"" ---------------
+set wrap " Wrap long lines
+set linebreak " Break lines at word boundaries
+packadd comment " Enable block commenting with gc
+
+"" ========
+"" CONTROLS
+"" --------
+set mouse=a
+
+vnoremap <C-z> <Plug>(comment-toggle)
+
+" Move selected lines up and down with easy key mappings
+vnoremap <A-S-Up> :m '<-2<CR>gv=gv " Alt + Up Arrow to move lines up
+vnoremap <A-S-Down> :m '>+1<CR>gv=gv " Alt + Down Arrow to move lines down
+
+" Indent and Unindent Selected Text
+vnoremap <Tab> >gv " Indent highlighted text when pressing Tab
+vnoremap <S-Tab> <gv " Unindent highlighted text when pressing Shift + Tab
+
+"" ===========
+"" STATUS LINE
+"" -----------
+
+set statusline=
+set statusline+=\ %F\ %M\ %Y\ %R " Status Left
+set statusline+=%= " Status Divider
+set statusline+=\ ascii:\ %b\ hex:\ 0x%B\ row:\ %l\ col:\ %c\ percent:\ %p%% " Status Right
+set laststatus=2 " Show the status on the second to last line.
+
+"" ========
+"" COMMANDS
+"" --------
+
+" sudo save!
+command! W execute 'w !sudo tee % > /dev/null' <bar> edit!
+
+" Set leader key to spacebar
+let mapleader=" "
+
+" reload current vimrc
+nnoremap <leader>r :source ~/.vim/vimrc<CR>
+
+
